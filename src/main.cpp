@@ -17,11 +17,11 @@ void setup() {
 }
 
 void loop() {
-    int reading = analogRead(PSD_PIN);
-    float percentage = (float)reading / 4095.0f;
-    float scaledVal = percentage * 3.3f;
-    tft.fillScreen(TFT_BLACK);
-    tft.setCursor(10, 50);
-    tft.printf("PSD voltage: %0.2f", scaledVal);
-    delay(500);
+  int reading = analogRead(PSD_PIN);
+  float percentage = (float)reading / 4095.0f;
+  float scaledVal = percentage * 3.3f;
+  tft.fillScreen(TFT_BLACK);
+  tft.setCursor(10, 50);
+  tft.printf("PSD voltage: %0.2f", scaledVal);
+  delay(500);
 }
