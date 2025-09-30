@@ -1,5 +1,11 @@
+// #define MOTOR
+#ifndef MOTOR
+
 #include <Arduino.h>
 #include <TFT_eSPI.h>
+
+#include <iomanip>
+#include <sstream>
 
 const int left = 0;
 const int right = 14;
@@ -36,7 +42,10 @@ void main_loop() {
       right_previous = right_now;
     }
     int value = analogRead(psd_in);
-    tft.drawNumber(value, 12, 0);
+    std::stringstream stream;
+    tft.setCursor(0, 30);
+    stream << std::setw(4) << std::setfill('0') << value;
+    tft.println(stream.str().c_str());
     switch (mode) {
       case 0:
         tft.drawString(" 10%", 0, 0);
@@ -70,3 +79,5 @@ void setup() {
 
 void loop() {
 }
+
+#endif
