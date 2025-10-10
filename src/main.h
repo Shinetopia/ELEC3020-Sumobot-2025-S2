@@ -10,8 +10,8 @@ class Motor {
 
  public:
   Motor() = default;
-  Motor(int encoder_a, int encoder_b, int drive_plus, int drive_minus,
-        int ledc_channel);
+  Motor(int drive_plus, int drive_minus, int encoder_a, int encoder_b,
+        int channel);
   void incrementTicks();
   int getSpeed();
   void drive(int speed, int desired);
