@@ -1,8 +1,12 @@
 #include <TFT_eSPI.h>
 #include <main.h>
 
-Motor left_motor = Motor(1, 2, 3, 10, 0);
-Motor right_motor = Motor(43, 44, 18, 17, 1);
+Motor left_motor = Motor(1, 2, ENCODER_LEFT, 0);
+Motor right_motor = Motor(43, 44, ENCODER_RIGHT, 1);
+pidController left_pid = pidController(0.15, 0, 0, &left_motor);
+pidController right_pid = pidController(0.15, 0, 0, &right_motor);
+int update_speed_flag = 0;
+int stay_in_flag = 0;
 TFT_eSPI tft = TFT_eSPI();
 
 void left_motor_ticks_interrupt() {
@@ -12,35 +16,115 @@ void right_motor_ticks_interrupt() {
   right_motor.incrementTicks();
 }
 
-void setup() {
-  attachInterrupt(3, left_motor_ticks_interrupt, RISING);
-  attachInterrupt(18, right_motor_ticks_interrupt, RISING);
-  pidController left_pid = pidController(0.15, 0, 0, &left_motor);
-  pidController right_pid = pidController(0.15, 0, 0, &right_motor);
-  tft.init();
-  tft.setTextSize(3);
-  tft.fillScreen(TFT_WHITE);
-  tft.setTextColor(TFT_BLACK, TFT_WHITE, true);
+void set_drive_flag() {
+  update_speed_flag = 1;
+}
+
+void set_stay_in_flag() {
+  tft.print("wow");
+  stay_in_flag = 1;
+}
+
+void drive_motors() {
+  if (update_speed_flag) {
+    left_pid.driveMotor();
+    right_pid.driveMotor();
+    update_speed_flag = 0;
+  }
+}
+
+void stay_in() {
+  /*
+  Function to help robot stay in the ring
+  we back up and turn around;
+  */
+  tft.fillScreen(TFT_BLUE);
+  stay_in_flag = 0;
+  left_pid.setDesired(-700);
+  right_pid.setDesired(-700);
+  left_pid.driveMotor();
+  right_pid.driveMotor();
+  pinMode(15, OUTPUT);
+  digitalWrite(15, HIGH);
+  int start = millis();
+  while (2000 > millis() - start) {
+    drive_motors();
+  }
+  right_pid.setDesired(700);
+  start = millis();
+  while (2000 > millis() - start) {
+    drive_motors();
+  }
+}
+
+void push() {
+  tft.fillScreen(TFT_RED);
+  left_pid.setDesired(900);
+  right_pid.setDesired(900);
+  while (!stay_in_flag) {
+    drive_motors();
+  }
+  stay_in();
+}
+
+void search() {
   while (true) {
+    tft.fillScreen(TFT_GREEN);
+    int start = millis();
+    left_pid.setDesired(700);
+    right_pid.setDesired(-700);
+    while (2000 > millis() - start) {
+      if (stay_in_flag) {
+        stay_in();
+      }
+      if (analogRead(PSD_PIN) < 60) {
+        push();
+      }
+      drive_motors();
+    }
+    if (stay_in_flag) {
+      stay_in();
+    }
+    if (analogRead(PSD_PIN) < 60) {
+      push();
+    }
     left_pid.setDesired(700);
     right_pid.setDesired(700);
-    for (int i = 0; i < 50; i++) {
-      left_pid.driveMotor();
-      right_pid.driveMotor();
-      delay(200);
-    }
-    left_pid.setDesired(-700);
-    for (int i = 0; i < 50; i++) {
-      left_pid.driveMotor();
-      right_pid.driveMotor();
-      delay(200);
+    while (2000 > millis() - start) {
+      if (stay_in_flag) {
+        stay_in();
+      }
+      if (analogRead(PSD_PIN) < 60) {
+        push();
+      }
+      drive_motors();
     }
   }
+}
+
+void setup() {
+  attachInterrupt(ENCODER_LEFT, left_motor_ticks_interrupt, RISING);
+  attachInterrupt(ENCODER_RIGHT, right_motor_ticks_interrupt, RISING);
+  pinMode(REFLECTANCE_PIN, INPUT);
+  attachInterrupt(REFLECTANCE_PIN, set_stay_in_flag, FALLING);
+  hw_timer_t* drive_timer = NULL;
+  drive_timer = timerBegin(0, 80, true);
+  timerAttachInterrupt(drive_timer, set_drive_flag, true);
+  timerAlarmWrite(drive_timer, 200000, true);
+  timerAlarmEnable(drive_timer);
+
+  tft.init();
+  search();
 }
 
 void loop() {
 }
 
+/// @brief Methods for the pid Controller class
+/// @param K_prop
+/// @param K_int
+/// @param K_der
+/// @param motor
 pidController::pidController(float K_prop, float K_int, float K_der,
                              Motor* motor) {
   Kp = K_prop;
@@ -61,21 +145,21 @@ void pidController::driveMotor() {
                     Kd * (err_now - 2 * err_old + err_old2);
   drive_speed = min(drive_speed, 256);
   drive_speed = max(drive_speed, -256);
-  tft.drawNumber(drive_speed, 0, 30);
   err_old2 = err_old;
   err_old = err_now;
   drive_speed_old = drive_speed;
   motor->drive(drive_speed, desired);
 }
 
-Motor::Motor(int drive_plus, int drive_minus, int encoder_a, int encoder_b,
-             int channel) {
-  this->encoder_a = encoder_a;
-  this->encoder_b = encoder_b;
+/// @brief Methods for the motor class
+/// @param drive_plus
+/// @param drive_minus
+/// @param encoder_a
+/// @param channel
+Motor::Motor(int drive_plus, int drive_minus, int encoder_a, int channel) {
   this->drive_plus = drive_plus;
   this->drive_minus = drive_minus;
   pinMode(encoder_a, INPUT);
-  pinMode(encoder_b, INPUT);
   pinMode(drive_plus, OUTPUT);
   pinMode(drive_minus, OUTPUT);
   ledcSetup(channel, 2000, 8);
@@ -84,12 +168,10 @@ Motor::Motor(int drive_plus, int drive_minus, int encoder_a, int encoder_b,
 
 void Motor::incrementTicks() {
   ticks++;
-  tft.drawNumber(ticks, 0, 60);
 }
 
 int Motor::getSpeed() {
   int speed = ticks * 1000 / (millis() - last_time);
-  tft.drawNumber(speed, 0, 0);
   this->ticks = 0;
 
   last_time = millis();
